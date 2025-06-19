@@ -175,16 +175,56 @@ class UDPHandler:
     
     def _decode_osc_message(self, data: bytes) -> Tuple[str, str]:
         """Decode OSC-like message from MaxMSP"""
-        address_end = data.find(b'\x00')
-        address = data[:address_end].decode('utf-8')
-        
-        # Adjust for MaxMSP data alignment
-        data_offset = (address_end + 4) & ~0x03
-        data_tag_end = data.find(b'\x00', data_offset)
-        input_offset = (data_tag_end + 4) & ~0x03
-        
-        input_data = data[input_offset:].decode('utf-8').strip('\x00')
-        return address, input_data
+        try:
+            # Find the end of the address string
+            address_end = data.find(b'\x00')
+            if address_end == -1:
+                raise ValueError("No null terminator found for address")
+            
+            # Decode address with error handling
+            address = data[:address_end].decode('utf-8', errors='replace')
+            
+            # Adjust for OSC alignment (4-byte boundaries)
+            data_offset = (address_end + 4) & ~0x03
+            
+            # Check if we have enough data
+            if data_offset >= len(data):
+                raise ValueError("Insufficient data for type tags")
+            
+            # Find type tag section
+            data_tag_end = data.find(b'\x00', data_offset)
+            if data_tag_end == -1:
+                data_tag_end = len(data)
+            
+            # Calculate input data offset
+            input_offset = (data_tag_end + 4) & ~0x03
+            
+            # Check if we have input data
+            if input_offset >= len(data):
+                return address, ""
+            
+            # Try to decode input data, with fallback for binary data
+            input_data_bytes = data[input_offset:]
+            
+            # First, try to decode as UTF-8
+            try:
+                input_data = input_data_bytes.decode('utf-8').strip('\x00')
+            except UnicodeDecodeError:
+                # If that fails, try latin-1 (which can handle any byte value)
+                try:
+                    input_data = input_data_bytes.decode('latin-1').strip('\x00')
+                except UnicodeDecodeError:
+                    # As a last resort, convert bytes to hex string
+                    input_data = input_data_bytes.hex()
+                    logger.warning(f"Binary data received, converted to hex: {input_data}")
+            
+            return address, input_data
+            
+        except Exception as e:
+            logger.error(f"Error decoding OSC message: {e}")
+            logger.debug(f"Raw data: {data.hex()}")
+            # Return empty values to prevent crash
+            return "", ""
     
     async def send_message(self, address: str, data: int) -> None:
         """Send message back to MaxMSP"""
