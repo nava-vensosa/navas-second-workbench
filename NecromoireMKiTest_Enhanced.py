@@ -136,9 +136,16 @@ class UDPHandler:
         """Process incoming UDP message and handle dual inputs"""
         try:
             address, input_data = self._decode_osc_message(data)
+            logger.debug(f"Received message: address='{address}', data='{input_data}', length={len(input_data)}")
             
             if address in self.config.expected_input_flags:
                 await self._handle_user_input(address, input_data, addr)
+            elif address == "/uin":
+                # Handle legacy single input format
+                logger.info(f"Received legacy /uin format: '{input_data}'")
+                await self.message_processor(input_data)
+            else:
+                logger.debug(f"Ignoring message with address: {address}")
         except Exception as e:
             logger.error(f"Error processing message from {addr}: {e}")
     
@@ -331,6 +338,13 @@ class DBNEngine:
                 
         except Exception as e:
             logger.error(f"Error processing input: {e}")
+            logger.error(f"Input that caused error: '{combined_hex}'")
+            logger.error(f"Input length: {len(combined_hex)} characters")
+            logger.error(f"Input as bytes: {combined_hex.encode('utf-8')}")
+            # Print character-by-character breakdown for debugging
+            logger.error("Character breakdown:")
+            for i, char in enumerate(combined_hex):
+                logger.error(f"  Position {i}: '{char}' (0x{ord(char):02X})")
     
     def _print_system_state(self, combined_hex: str) -> None:
         """Print all stored system data for debugging"""
